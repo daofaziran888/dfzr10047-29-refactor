@@ -10,6 +10,17 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.value_cast import (  # re-exported for callers that consume the shared convention from pipeline
+    parse_flatten_field,
+    parse_flattened_field,
+    parse_flattened_fields,
+)
+
+__all__ = [
+    "FlattenPath", "CastRule", "UnitFactor", "TransformStage",
+    "parse_flattened_field", "parse_flatten_field", "parse_flattened_fields",
+]
+
 
 class FlattenPath:
     """单条展平路径定义。"""
@@ -207,6 +218,12 @@ class TransformStage:
         for idx, row in enumerate(rows):
             cast_row: dict[str, Any] = {}
             row_failures: list[str] = []
+            failure_evidence: list[dict[str, Any]] = []
+            element_position = (
+                row.get("element_position") or row.get("原元素位置")
+                or row.get("__element_position") or idx + 1
+            )
+            element_index = row.get("element_index", idx)
             for field, raw in row.items():
                 rule = self._cast_rules.get(field)
                 if rule is None:
@@ -218,13 +235,33 @@ class TransformStage:
                 else:
                     rule.failure_count += 1
                     row_failures.append(err)
+                    failure_evidence.append({
+                        "field": field,
+                        "failed_field": field,
+                        "raw": raw,
+                        "raw_value": raw,
+                        "reason": err,
+                        "error_reason": err,
+                        "row_index": idx,
+                        "element_index": element_index,
+                        "element_position": element_position,
+                        "position": element_position,
+                        "原元素位置": element_position,
+                    })
                     cast_row[field] = None
             if row_failures:
                 failed_rows.append({
                     "batch_id": batch_id,
                     "row_index": idx,
+                    "element_index": element_index,
+                    "element_position": element_position,
+                    "position": element_position,
+                    "原元素位置": element_position,
                     "raw_row": dict(row),
+                    "raw": dict(row),
                     "failed_fields": list(row_failures),
+                    "failure_evidence": failure_evidence,
+                    "failures": failure_evidence,
                 })
                 self._cast_failures.append({
                     "batch_id": batch_id, "row_index": idx,
@@ -235,6 +272,54 @@ class TransformStage:
                 ok_rows.append(cast_row)
 
         return ok_rows, failed_rows
+
+    def preview_cast_rows(self, batch_id: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+        """只读预览：复用同一转型判断和证据映射，但不增加规则失败计数或执行留痕。"""
+        ok_rows: list[dict[str, Any]] = []
+        failed_rows: list[dict[str, Any]] = []
+        items: list[dict[str, Any]] = []
+        for idx, row in enumerate(rows):
+            cast_row: dict[str, Any] = {}
+            evidence: list[dict[str, Any]] = []
+            position = row.get("element_position") or row.get("原元素位置") or idx + 1
+            element_index = row.get("element_index", idx)
+            for field, raw in row.items():
+                rule = self._cast_rules.get(field)
+                if rule is None:
+                    cast_row[field] = raw
+                    continue
+                success, value, err = self._cast_one(raw, rule)
+                item = {
+                    "batch_id": batch_id, "field": field, "raw": raw, "value": value,
+                    "ok": success, "reason": err, "row_index": idx,
+                    "element_index": element_index, "element_position": position,
+                    "原元素位置": position,
+                }
+                items.append(item)
+                if success:
+                    cast_row[field] = value
+                else:
+                    evidence.append(item)
+                    cast_row[field] = None
+            if evidence:
+                failed_rows.append({
+                    "batch_id": batch_id, "row_index": idx,
+                    "element_index": element_index, "element_position": position,
+                    "原元素位置": position, "raw_row": dict(row),
+                    "failed_fields": [e["reason"] for e in evidence],
+                    "failure_evidence": evidence, "failures": evidence,
+                })
+            else:
+                cast_row["__row_index"] = idx
+                ok_rows.append(cast_row)
+        return {
+            "ok": not failed_rows, "preview": True, "side_effect_free": True,
+            "batch_id": batch_id, "items": items, "results": items,
+            "successes": ok_rows, "failures": failed_rows,
+            "success_count": len(ok_rows), "failure_count": len(failed_rows),
+        }
+
+    preview_cast = preview_cast_rows
 
     def _cast_one(self, raw: Any, rule: CastRule) -> tuple[bool, Any, str]:
         """单值转型：失败返回原因，不用空值填充伪装成功。"""

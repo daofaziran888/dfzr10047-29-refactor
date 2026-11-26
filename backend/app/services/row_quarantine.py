@@ -11,7 +11,9 @@ class RowQuarantineService(BaseModuleService):
     MODULE = "row_quarantine"
     ENTITY = "隔离行"
     OPERATION_TERM = "校验"
-    LIST_FIELDS = ["隔离编号", "关联批次", "原始行号", "失败字段", "失败原因", "原始行文本", "复核结论", "隔离时间"]
+    LIST_FIELDS = ["隔离编号", "关联批次", "原始行号", "失败字段", "失败原因", "原始行文本", "复核结论", "隔离时间",
+                   "原元素位置", "元素位置", "原始值", "叶节点路径", "原始文件名", "文档编号",
+                   "正式批号", "转型编号", "转型结论"]
     REQUIRED_FIELDS = ["隔离编号", "关联批次", "原始行号"]
     STATUS_ORDER = ["已隔离", "复核中", "已回补", "已废弃"]
     ACTION_RULES = {"提交复核": "复核中", "回补批次": "已回补", "废弃隔离行": "已废弃"}

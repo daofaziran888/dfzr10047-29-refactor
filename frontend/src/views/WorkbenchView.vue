@@ -15,6 +15,8 @@
       </div>
     </header>
 
+    <ValueCastPanel v-if="meta.key === 'value_cast'" />
+
     <div class="stat-row">
       <article v-for="item in stats" :key="item.label" class="stat-card">
         <span class="stat-label">{{ item.label }}</span>
@@ -51,6 +53,15 @@
           <td>{{ row.status }}</td>
           <td class="row-actions">
             <button
+              v-if="meta.key === 'row_quarantine'"
+              class="link"
+              type="button"
+              :data-testid="`detail-${row.id}`"
+              @click="openDetail(row)"
+            >
+              详情
+            </button>
+            <button
               v-for="action in meta.actions"
               :key="action"
               class="link"
@@ -86,6 +97,27 @@
       </form>
     </div>
 
+    <div v-if="detailRow" class="modal-backdrop" data-testid="quarantine-detail" @click.self="detailRow = null">
+      <section class="modal">
+        <h3>坏行详情 · {{ detailRow.隔离编号 }}</h3>
+        <dl class="detail-grid">
+          <div><dt>关联批次</dt><dd>{{ detailRow.关联批次 || '—' }}</dd></div>
+          <div><dt>原始行号</dt><dd>{{ detailRow.原始行号 || '—' }}</dd></div>
+          <div data-testid="detail-element-position"><dt>原元素位置</dt><dd>{{ detailRow.原元素位置 ?? '—' }}</dd></div>
+          <div><dt>失败字段</dt><dd>{{ detailRow.失败字段 || '—' }}</dd></div>
+          <div data-testid="detail-reason"><dt>失败原因</dt><dd>{{ detailRow.失败原因 || '—' }}</dd></div>
+          <div><dt>原始行文本</dt><dd>{{ detailRow.原始行文本 || '—' }}</dd></div>
+          <div><dt>原始值</dt><dd>{{ detailRow.原始值 || '—' }}</dd></div>
+          <div data-testid="detail-source-file"><dt>原文件定位</dt><dd>{{ detailRow.原始文件名 || detailRow.source_file || '—' }}</dd></div>
+          <div><dt>正式批号</dt><dd>{{ detailRow.正式批号 || '—' }}</dd></div>
+          <div><dt>转型结论</dt><dd>{{ detailRow.转型结论 || '—' }}</dd></div>
+        </dl>
+        <div class="page-actions">
+          <button class="btn primary" type="button" data-testid="close-detail" @click="detailRow = null">关闭</button>
+        </div>
+      </section>
+    </div>
+
     <footer class="page-foot">
       <span>共 {{ total }} 条{{ meta.name }}记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
@@ -104,6 +136,7 @@ import {
   runAction as applyAction,
 } from '@/api/backend-service'
 import type { EntryRow } from '@/data/types'
+import ValueCastPanel from '@/views/ValueCastPanel.vue'
 
 const props = defineProps<{ moduleKey: string }>()
 const meta = moduleMeta(props.moduleKey)
@@ -115,6 +148,11 @@ const filterFields = meta.fields.slice(0, 3)
 const showCreate = ref(false)
 const creating = ref(false)
 const createValues = ref<Record<string, string>>({})
+const detailRow = ref<EntryRow | null>(null)
+
+function openDetail(row: EntryRow) {
+  detailRow.value = row
+}
 const stats = computed(() => [
   { label: meta.metrics[0], value: total.value },
   { label: meta.metrics[1], value: rows.value.filter((row) => row.status === meta.statuses[1]).length },
@@ -189,3 +227,30 @@ async function reload() {
 
 onMounted(reload)
 </script>
+
+<style scoped>
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+.detail-grid div {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.detail-grid dt {
+  color: #667085;
+  font-size: 12px;
+}
+.detail-grid dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 720px) {
+  .detail-grid { grid-template-columns: 1fr; }
+}
+</style>

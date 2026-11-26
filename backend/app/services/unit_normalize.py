@@ -151,3 +151,102 @@ class UnitNormalizeService(BaseModuleService):
             for r in store.rows(self.MODULE)
             if r.get("status") == "系数冲突"
         ]
+
+    def normalize_formal_cast_value(
+        self,
+        formal_batch_no: str,
+        element_position: Any = None,
+        *,
+        result_key: str = "",
+        channel: str = "",
+        hit_date: str = "",
+        field: str = "",
+    ) -> tuple[bool, float | None, str]:
+        """归一入口守卫：只接受取值转型正式批中已标记“正式成功”的结果。"""
+        candidates = [
+            r for r in store.rows("cast_result")
+            if str(r.get("formal_batch_no") or r.get("正式批号")) == str(formal_batch_no)
+            and r.get("formal_status") == "正式成功"
+            and r.get("ok") is True
+        ]
+        if result_key:
+            candidates = [r for r in candidates if r.get("result_key") == result_key]
+        if element_position is not None:
+            candidates = [
+                r for r in candidates
+                if str(r.get("element_position") or r.get("原元素位置")) == str(element_position)
+            ]
+        if field:
+            candidates = [r for r in candidates if r.get("field") == field]
+        if not candidates:
+            return False, None, (
+                f"正式批 {formal_batch_no} 没有可归一的正式成功转型值；"
+                "预览值、失败值和未入账结果不得进入单位归一"
+            )
+
+        record = candidates[0]
+        try:
+            raw_value = float(record.get("value"))
+        except (TypeError, ValueError):
+            return False, None, f"正式成功值 {record.get('value')!r} 不是数值，无法单位归一"
+
+        use_field = field or str(record.get("field") or "value")
+        use_channel = channel or str(record.get("channel") or "*")
+        ok, value, message = self.normalize_value(use_field, use_channel, raw_value, hit_date)
+        if ok:
+            record["normalized"] = True
+            record["normalize_ok"] = True
+            record["normalized_value"] = value
+            record["normalize_message"] = message
+        return ok, value, message
+
+    normalize_committed_cast_value = normalize_formal_cast_value
+
+    def normalize_formal_batch(
+        self,
+        formal_batch_no: str,
+        channel: str = "",
+        hit_date: str = "",
+        field: str = "",
+    ) -> dict[str, Any]:
+        """单位归一批量入口：只读取正式批中 formal_status=正式成功 的转型值。"""
+        records = [
+            r for r in store.rows("cast_result")
+            if str(r.get("formal_batch_no") or r.get("正式批号")) == str(formal_batch_no)
+            and r.get("formal_status") == "正式成功"
+            and r.get("ok") is True
+        ]
+        if field:
+            records = [r for r in records if r.get("field") == field]
+
+        normalized: list[dict[str, Any]] = []
+        values: list[float | None] = []
+        for record in records:
+            ok, value, message = self.normalize_formal_cast_value(
+                formal_batch_no,
+                element_position=record.get("element_position"),
+                channel=channel,
+                hit_date=hit_date,
+                field=field or str(record.get("field") or ""),
+            )
+            item = dict(record)
+            item.update({"normalize_ok": ok, "normalized_value": value, "normalize_message": message})
+            normalized.append(item)
+            if ok:
+                values.append(value)
+
+        return {
+            "ok": bool(records),
+            "formal_batch_no": formal_batch_no,
+            "accepted_count": len(records),
+            "normalized_count": len(values),
+            "values": values,
+            "actual_values": values,
+            "normalized": normalized,
+            "message": (
+                f"已归一 {len(values)}/{len(records)} 条正式成功值"
+                if records else f"正式批 {formal_batch_no} 没有可归一的正式成功结果"
+            ),
+        }
+
+    normalize_committed_batch = normalize_formal_batch

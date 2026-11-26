@@ -37,6 +37,52 @@ export async function runAction(
   return await response.json()
 }
 
+export async function postWorkflow<T = any>(path: string, payload: Record<string, unknown> = {}): Promise<T> {
+  const response = await request(path, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return await response.json() as T
+}
+
+export const previewValueCast = (payload: Record<string, unknown>) =>
+  postWorkflow('/api/value_cast/preview', payload)
+
+export const createFormalCastBatch = (payload: Record<string, unknown>) =>
+  postWorkflow('/api/value_cast/formal-batches', payload)
+
+export const submitFormalCastBatch = (payload: Record<string, unknown>) =>
+  postWorkflow('/api/value_cast/submit', payload)
+
+export const retryFormalCastBatch = (batchNo: string, payload: Record<string, unknown> = {}) =>
+  postWorkflow(`/api/value_cast/formal-batches/${encodeURIComponent(batchNo)}/retry`, payload)
+
+export const correctFormalCastBatch = (batchNo: string, payload: Record<string, unknown>) =>
+  postWorkflow(`/api/value_cast/formal-batches/${encodeURIComponent(batchNo)}/correct`, payload)
+
+export const normalizeFormalCastBatch = (payload: Record<string, unknown>) =>
+  postWorkflow('/api/value_cast/normalize', payload)
+
+export async function getFormalCastReceipt(batchNo: string): Promise<any> {
+  const response = await request(`/api/value_cast/receipts/${encodeURIComponent(batchNo)}`)
+  if (!response.ok) throw new Error('正式批回执恢复失败')
+  return await response.json()
+}
+
+export async function downloadFormalCastResult(batchNo: string): Promise<void> {
+  const response = await request(`/api/value_cast/receipts/${encodeURIComponent(batchNo)}/download`)
+  if (!response.ok) throw new Error('旧结果下载失败')
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `${batchNo}-cast-result.csv`
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+  URL.revokeObjectURL(url)
+}
+
 export async function downloadEntries(
   key: string,
   filters: Record<string, string> = {},

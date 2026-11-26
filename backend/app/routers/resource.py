@@ -49,6 +49,14 @@ def export_entries(
     status: str | None = Query(default=None),
 ) -> StreamingResponse:
     service = require_service(module)
+    if module == "value_cast":
+        batch_no = request.query_params.get("formal_batch_no") or request.query_params.get("batch_no")
+        if batch_no:
+            filename, content, media_type = service.download_formal_batch(batch_no)
+            return StreamingResponse(
+                iter([content]), media_type=media_type,
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
     filters = {
         key: value.strip()
         for key, value in request.query_params.items()
